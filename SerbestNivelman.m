@@ -1,5 +1,6 @@
 classdef SerbestNivelman
-    properties
+    properties (Dependent = true, Access = public)
+        pointName(:, 1) cell
         A double
         l double
         P double
@@ -9,26 +10,28 @@ classdef SerbestNivelman
         elevation
         Measured
         f double
-        pointName(:, 1) cell
     end
-
-    % constructor method
+    
     methods
+        % constructor method
         function this = SerbestNivelman(measure, elevation)
+            format longG
             this.measure = measure;
             this.elevation = elevation;
-            this.Measured = this.measure ;
+            this.Measured= this.measure;
         end
     end
 
     % SET METHODS
     methods
+        % olculer
         function this = set.measure(this, msr)
-            this.measure = readcell(msr) ;
+            this.measure = msr ;
         end
-        
+
+        %yukseklikler
         function this = set.elevation(this, elev)
-            this.elevation = readcell(elev) ;
+            this.elevation = elev ;
         end
         
         function this = set.Measured(this, ms)
@@ -39,6 +42,7 @@ classdef SerbestNivelman
 
     % GET METHODS 
     methods
+        % serbestlik derecesi
         function f = get.f(this)
             n = size(this.Measured, 1) ;
             u = size(this.elevation, 1) ;
@@ -53,16 +57,22 @@ classdef SerbestNivelman
                 error('dengeleme == ?')
             end
         end
+        
+        function name = get.pointName(this)
+            name = unique(cellfun(@num2str, this.Measured(:,1:2), 'UniformOutput', 0));
+        end
 
+        % stokastik model(agirlik matrisi)
         function p = get.P(this)
             p_ = [this.Measured{:, 4}];
             p_ = 1 ./ p_ ;
             p = diag(p_) ;
         end
-        
+         
+        % katsayilar matrisi
         function a = get.A(this)
             A_ = zeros(size(this.Measured, 1), size(this.elevation, 1));
-            points = unique(cellfun(@num2str, this.Measured(:,1:2), 'UniformOutput', 0));
+            points = this.pointName ;
             for i = 1 : size(this.Measured, 1)
                startidx = strcmp(string(points), string(this.Measured{i, 2}));
                stopidx = strcmp(string(points), string(this.Measured{i, 1}));
@@ -72,6 +82,7 @@ classdef SerbestNivelman
             a = A_;
         end
         
+        % oteleme vektoru
         function l_ = get.l(this)
             elev = this.elevation ;
             msr = this.Measured ;
@@ -82,7 +93,7 @@ classdef SerbestNivelman
                     out.l(i) = bn - dn ;
                 end
             catch
-                error(' /// Lütfen nokta isimlerini kontrol ediniz.')
+                error(' /// Lutfen nokta isimlerini kontrol ediniz.')
             end
             l__ = [msr{:, 3}] - out.l;
             l_ = round(l__'*1e3) ;
@@ -92,6 +103,12 @@ classdef SerbestNivelman
     
     methods
         % dengeleme bilinmeyeni hesabı
+        %   "Tum iz minimum"
+        %   args:
+        %       this: object
+        %   returns:
+        %       x: serbest dengelenmis koordinatlar vektoru
+        %       Qxx: Koordinatlari bilinmeyenlerin ters agirlik matrisi
         function [x, Qxx] = dengelemeBilinmeyen(this)
             A_ = this.A ;
             P_ = this.P ;
@@ -100,10 +117,11 @@ classdef SerbestNivelman
             N = A_' * P_ * A_ ;
             n = A_' * P_ * l_ ;
             
+            % pinv()
             G = 1./sqrt(size(A_, 2)) * ones(size(A_, 2), 1) ;
             E = G*G' ;
             
-            Np = (N + E)^-1 - E ;
+            Np = (N + E)^-1 - E ; % pseudo ters
             Qxx_ = Np ;
             Qxx = Qxx_ ;
 
@@ -111,6 +129,12 @@ classdef SerbestNivelman
         end
 
         % kesin değer hesabı
+        %   args:
+        %       this: Object
+        %       x: serbest dengelenmis koordinatlar vektoru
+        %   returns:
+        %       H: Nokta yuksekliklerinin kesin degeri
+        %       V: Duzeltmeler
         function [H, V] = kesinDeger(this, x)
             h = [this.elevation{:, 2}]' ;
             A_ = this.A ;
@@ -120,6 +144,11 @@ classdef SerbestNivelman
         end
 
         % duyarlılık hesapları
+        %   args:
+        %       V: Duzeltmeler
+        %       Qxx: Koordinatlari bilinmeyenlerin ters agirlik matrisi
+        %   returns:
+        %       M: Duyarlilik hesaplari
         function M = duyarlilik(this, V, Qxx)
             A_ = this.A ;
             P_ = this.P ;
@@ -131,8 +160,8 @@ classdef SerbestNivelman
             mx = m0 .* sqrt(diag(Qxx_)) ; % bilinmeyenlerin ortalama hatasi
             Qll_ = A_ * Qxx_ * A_' ; % dengeli olculerin ters agirlik matrisi
             ml_ = m0 * sqrt(diag(Qll_)) ; % dengeli olculerin ortalama hatasi
-            Qvv = P_^-1 - Qll_ ;
-            mv = m0 * sqrt(diag(Qvv)) ;
+            Qvv = P_^-1 - Qll_ ; % duzeltmelerin tes agirlik matrisi
+            mv = m0 * sqrt(diag(Qvv)) ; % duzeltmelerin ortalama hatasi
 
             M = struct( ...
                 'm0', m0, ...
@@ -144,10 +173,16 @@ classdef SerbestNivelman
                 'mv', mv) ;
         end
 
-        % Uyuşumsuz ölçüler testi, 
-        % <output>Object: SerbestNivelman</output>
-        function testObject = t_test(this, V, Qvv, alpha)
+        % Uyusumsuz olculer testi, 
+        %   args:
+        %       V: Duzeltmeler
+        %       M: Duyarlilik hesaplari
+        %       alpha: 
+        %   returns:
+        %       Object: SerbestDengeleme nesnesi
+        function Object = t_test(this, V, M, alpha)
             if nargin < 4; alpha = 5; end
+            Qvv = M.Qvv ;
             P_ = this.P ;
             f_ = this.f ;
 
@@ -163,18 +198,42 @@ classdef SerbestNivelman
             T_ = max(T) ;
             t_ = tinv(1 - (alpha/1e2)/2, f_ - 1) ;
 
-            fprintf('->%d. kez dengeleme yapilmistir.\n', n) ;
+            fprintf('// %d. kez dengeleme yapilmistir.\n', n) ;
 
             if T_ > t_
-                fprintf('->%d. olcu uyusumsuzdur ve olcularin arasindan cikarilmistir.\n', find(T==T_)) ;
+                fprintf('// "T:%f > t:%f" oldugundan\n', T_, t_)
+                fprintf('// %d. olcu uyusumsuzdur ve olculerin arasindan cikarilmistir.\n', find(T==T_)) ;
                 idx = ( T == T_ ) ;
                 this.Measured(idx, :) = [];
             else
-                fprintf('->uyusumsuz olcu yoktur.\n')
+                fprintf('// "T:%f < t:%f" oldugundan\n', T_, t_)
+                fprintf('// uyusumsuz olcu yoktur.\n')
                 n = 0;
             end
-            fprintf('----------------------\n')
-            testObject = this ;
+            fprintf('%s\n', char(ones(1,100)*45))
+            Object = SerbestNivelman(this.Measured, this.elevation) ;
+        end
+    end
+    
+    methods (Static)
+        % Dosya Okuma
+        %   args:
+        %       filename: str
+        %   returns:
+        %       content: cell array
+        function content = readFile(filename)
+            data = readcell(filename) ;
+            check = cellfun(@ismissing, data, 'UniformOutput', false);
+            ret = cellfun(@all, check);
+            count = 1; err.c = [];
+            for i = 1:numel(ret)
+                if ret(i); err.c(count) = mod(i, size(ret, 1)); count = count + 1; end
+            end
+            err = unique(err.c);
+            if numel(err) >= 1
+                error([mat2str(err), ': satirlari hatalidir.'])
+            end
+            content = data;
         end
     end
 end
