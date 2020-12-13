@@ -1,24 +1,65 @@
+% SerbestNivelman:
+% Nivelman aglarinin serbest dengelenmesi,
+% Odev icin yapılmistir.
+%
+% Dosyalari yuklemek icin SerbestNivelman.readFile() metodu kullanılmalı
+% veya cell array şeklinde sınıfa verilmelidir.
+%
+% ölcü dosya yapısı:
+% BN   SN       Yukseklik Farki(m)      Gecki Uzunlugu(km)
+% {...}    {...}            {...}                               {...}
+% {...}    {...}            {...}                               {...}
+%   .        .               .                                   .
+%   .        .               .                                   .
+% yaklasik degerlerin dosya yapısı:
+% Nokta No      Yaklasik Yukseklikler(m)
+%     {...}                         {...}
+%     {...}                         {...}
+%       .                             .
+%       .                             .
+%
+
+% version: 9.9.0.1467703 (R2020b)
+% github.com/solounextracto
+% @author: 
+% @date: 20201204
 classdef SerbestNivelman
     properties (Dependent = true, Access = public)
-        pointName(:, 1) cell
         A double
         l double
         P double
     end
+    properties (Access = public)
+        pointName(:, 1) cell
+    end
     properties (Access = private)
+        counter uint8
         measure
         elevation
         Measured
-        f double
+        f uint8
     end
     
     methods
         % constructor method
-        function this = SerbestNivelman(measure, elevation)
+        function this = SerbestNivelman(measure, elevation, ct)
+            if nargin < 3; this.counter = 1; else; this.counter = ct; end
             format longG
             this.measure = measure;
             this.elevation = elevation;
             this.Measured= this.measure;
+        end
+        
+        function [EOA, params] = initAdjust(adjustmentObject)
+            old_adjust = 0;
+            while (adjustmentObject.counter - old_adjust) ~= 0
+                [x, Qxx] = dengelemeBilinmeyen(adjustmentObject) ;
+                [H, V] = kesinDeger(adjustmentObject, x) ;
+                M = duyarlilik(adjustmentObject, V, Qxx) ;
+                adjustmentObject = t_test(adjustmentObject, V, M) ;
+            end
+            EOA = adjustmentObject;
+            params = struct('x', x, 'Qxx', Qxx, 'H', H, 'V', V, 'M', M);
         end
     end
 
@@ -46,15 +87,15 @@ classdef SerbestNivelman
         function f = get.f(this)
             n = size(this.Measured, 1) ;
             u = size(this.elevation, 1) ;
-            d = 1 ;
+            d = 1 ; % Yükseklik ağlarının datum parametresi, 1 öteleme.
             
             f_ = n - u*1 + d ;
             f = f_ ;
 
             if f_ < 0
-                error('dengeleme yapilmaz')
+                error('varsayimlara dayali cozum yapilir.')
             elseif f_ == 0
-                error('dengeleme == ?')
+                error('tek anlamli cebrik cozum yapilir.')
             end
         end
         
@@ -83,6 +124,7 @@ classdef SerbestNivelman
         end
         
         % oteleme vektoru
+        % TODO: try-catch-otherwise, l hesaplanamıyor ise exception fırlat.
         function l_ = get.l(this)
             elev = this.elevation ;
             msr = this.Measured ;
@@ -146,7 +188,7 @@ classdef SerbestNivelman
         % duyarlılık hesapları
         %   args:
         %       V: Duzeltmeler
-        %       Qxx: Koordinatlari bilinmeyenlerin ters agirlik matrisi
+        %       Qxx: Bilinmeyenlerin ters agirlik matrisi
         %   returns:
         %       M: Duyarlilik hesaplari
         function M = duyarlilik(this, V, Qxx)
@@ -186,10 +228,7 @@ classdef SerbestNivelman
             P_ = this.P ;
             f_ = this.f ;
 
-            persistent n
-            if isempty(n); n = 0; end
-            
-            n = n + 1 ;
+            n = this.counter;
 
             s0 = sqrt((1 / (f_ - 1)) * ((V'*P_ * V) - (V.^2) ./ (diag(Qvv)))) ;
 
@@ -205,18 +244,19 @@ classdef SerbestNivelman
                 fprintf('// %d. olcu uyusumsuzdur ve olculerin arasindan cikarilmistir.\n', find(T==T_)) ;
                 idx = ( T == T_ ) ;
                 this.Measured(idx, :) = [];
+                n = n + 1;
             else
                 fprintf('// "T:%f < t:%f" oldugundan\n', T_, t_)
                 fprintf('// uyusumsuz olcu yoktur.\n')
                 n = 0;
             end
             fprintf('%s\n', char(ones(1,100)*45))
-            Object = SerbestNivelman(this.Measured, this.elevation) ;
+            Object = SerbestNivelman(this.Measured, this.elevation, n) ;
         end
     end
     
     methods (Static)
-        % Dosya Okuma
+        % Dosya Okuma: only .txt
         %   args:
         %       filename: str
         %   returns:
