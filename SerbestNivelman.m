@@ -7,10 +7,10 @@
 %
 % ölcü dosya yapısı:
 % BN   SN       Yukseklik Farki(m)      Gecki Uzunlugu(km)
-% {...}    {...}            {...}                               {...}
-% {...}    {...}            {...}                               {...}
-%   .        .               .                                   .
-%   .        .               .                                   .
+% {...}    {...}            {...}               {...}
+% {...}    {...}            {...}               {...}
+%   .        .               .                    .
+%   .        .               .                    .
 % yaklasik degerlerin dosya yapısı:
 % Nokta No      Yaklasik Yukseklikler(m)
 %     {...}                         {...}
@@ -19,7 +19,6 @@
 %       .                             .
 %
 
-% version: 9.9.0.1467703 (R2020b)
 % github.com/solounextracto
 % @author: 
 % @date: 20201204
